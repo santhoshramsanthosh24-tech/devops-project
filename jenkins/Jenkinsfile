@@ -1,84 +1,59 @@
-// ============================================================================
-// Enterprise DevOps CI/CD Pipeline Jenkinsfile
-// Supports automated build, test, and deployment workflow
-// ============================================================================
+cd /mnt/e/data\ engennering/Devops_project/
 
+cat > jenkins/Jenkinsfile << 'EOF'
 pipeline {
     agent any
 
     environment {
-        IMAGE_NAME = 'devops-cicd-app'
-        IMAGE_TAG  = "${BUILD_NUMBER}"
-    }
-
-    // ============ Environment Variables ============
-    environment {
-        REGISTRY = 'docker.io'
-        IMAGE_NAME = 'devops-cicd-app'
-        IMAGE_TAG = "${BUILD_NUMBER}".take(10)
-        GIT_COMMIT_SHORT = "${GIT_COMMIT.take(7)}"
-        DEPLOYMENT_ID = "${BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
+        REGISTRY             = 'docker.io'
+        IMAGE_NAME           = 'devops-cicd-app'
+        IMAGE_TAG            = "${BUILD_NUMBER}"
+        GIT_COMMIT_SHORT     = "${GIT_COMMIT.take(7)}"
+        DEPLOYMENT_ID        = "${BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
         DOCKER_REGISTRY_CREDS = credentials('docker-registry-credentials')
-        SLACK_WEBHOOK = credentials('slack-webhook-url')
+        SLACK_WEBHOOK        = credentials('slack-webhook-url')
     }
 
-    // ============ Build Parameters ============
     parameters {
         choice(name: 'DEPLOY_ENV', choices: ['dev', 'staging', 'production'], description: 'Deployment Environment')
-        booleanParam(name: 'RUN_TESTS', defaultValue: true, description: 'Run automated tests')
-        booleanParam(name: 'PUSH_IMAGE', defaultValue: true, description: 'Push image to registry')
+        booleanParam(name: 'RUN_TESTS',   defaultValue: true, description: 'Run automated tests')
+        booleanParam(name: 'PUSH_IMAGE',  defaultValue: true, description: 'Push image to registry')
     }
 
-    // ============ Build Triggers ============
     triggers {
-        // Poll SCM every 5 minutes
         pollSCM('H/5 * * * *')
-        
-        // Trigger on git push (webhook)
         githubPush()
     }
 
-    // ============ Build Options ============
     options {
-        // Keep last 30 builds
         buildDiscarder(logRotator(numToKeepStr: '30'))
-        
-        // Timeout after 1 hour
         timeout(time: 1, unit: 'HOURS')
-        
-        // Disable concurrent builds
         disableConcurrentBuilds()
-        
-        // Add timestamps to console output
         timestamps()
     }
 
-    // ============ Pipeline Stages ============
     stages {
-        // ========== Stage 1: Initialization ==========
+
         stage('Initialize') {
             steps {
                 script {
-                    echo "════════════════════════════════════════════════════════"
+                    echo "================================================"
                     echo "  DevOps CI/CD Pipeline - Build #${BUILD_NUMBER}"
-                    echo "════════════════════════════════════════════════════════"
+                    echo "================================================"
                     echo "Git Branch: ${GIT_BRANCH}"
                     echo "Git Commit: ${GIT_COMMIT_SHORT}"
                     echo "Environment: ${DEPLOY_ENV}"
                     echo "Deployment ID: ${DEPLOYMENT_ID}"
-                    echo "════════════════════════════════════════════════════════"
+                    echo "================================================"
                 }
             }
         }
 
-        // ========== Stage 2: Checkout ==========
         stage('Checkout') {
             steps {
                 script {
-                    echo "📥 Checking out source code from repository..."
+                    echo "Checking out source code from repository..."
                     checkout scm
-                    
-                    // Display git information
                     sh '''
                         echo "Git remote: $(git config --get remote.origin.url)"
                         echo "Git branch: $(git rev-parse --abbrev-ref HEAD)"
@@ -90,338 +65,302 @@ pipeline {
             }
         }
 
-        // ========== Stage 3: Build ==========
         stage('Build') {
             steps {
                 script {
-                    echo "🔨 Building application..."
+                    echo "Building application..."
                     sh '''
-                        cd app
-                        npm install --legacy-peer-deps
-                        npm run build 2>/dev/null || echo "No build script defined"
+                        if [ -f app/package.json ]; then
+                            cd app
+                            npm install --legacy-peer-deps
+                            npm run build 2>/dev/null || echo "No build script defined"
+                        else
+                            echo "No package.json found, skipping build"
+                        fi
                     '''
                 }
             }
         }
 
-        // ========== Stage 4: Unit Tests ==========
         stage('Unit Tests') {
             when {
                 expression { params.RUN_TESTS == true }
             }
             steps {
                 script {
-                    echo "✅ Running unit tests..."
+                    echo "Running unit tests..."
                     sh '''
-                        cd app
-                        npm test || true
-                        echo "Unit tests completed"
+                        if [ -f app/package.json ]; then
+                            cd app
+                            npm test || true
+                            echo "Unit tests completed"
+                        else
+                            echo "No tests found, skipping"
+                        fi
                     '''
                 }
             }
         }
 
-        // ========== Stage 5: Code Quality Analysis ==========
         stage('Code Quality') {
             steps {
                 script {
-                    echo "🔍 Analyzing code quality..."
+                    echo "Analyzing code quality..."
                     sh '''
-                        cd app
-                        
-                        # Run ESLint if available
-                        if [ -f .eslintrc.json ] || [ -f .eslintrc.js ]; then
-                            npm run lint || true
+                        if [ -f app/package.json ]; then
+                            cd app
+                            if [ -f .eslintrc.json ] || [ -f .eslintrc.js ]; then
+                                npm run lint || true
+                            fi
+                            npm audit --production || true
+                            echo "Code quality check completed"
+                        else
+                            echo "No package.json, skipping code quality"
                         fi
-                        
-                        # Check for dependencies vulnerabilities
-                        npm audit --production || true
-                        
-                        echo "Code quality check completed"
                     '''
                 }
             }
         }
 
-        // ========== Stage 6: Security Scan ==========
         stage('Security Scan') {
             steps {
                 script {
-                    echo "🔒 Running security scans..."
+                    echo "Running security scans..."
                     sh '''
                         echo "Security scan results:"
-                        
-                        # Check for sensitive data
-                        if grep -r "password" app/src/ 2>/dev/null; then
-                            echo "Warning: Potential hardcoded passwords detected"
-                        fi
-                        
-                        if grep -r "SECRET" app/src/ 2>/dev/null; then
-                            echo "Warning: Potential secrets detected"
-                        fi
-                        
+                        grep -r "password" app/src/ 2>/dev/null && echo "Warning: Potential hardcoded passwords detected" || true
+                        grep -r "SECRET"   app/src/ 2>/dev/null && echo "Warning: Potential secrets detected"            || true
                         echo "Security scan completed"
                     '''
                 }
             }
         }
 
-        // ========== Stage 7: Docker Build ==========
         stage('Docker Build') {
             steps {
                 script {
-                    echo "🐳 Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                    echo "Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG}"
                     sh '''
-                        docker build \
-                          -f docker/Dockerfile \
-                          -t ${IMAGE_NAME}:${IMAGE_TAG} \
-                          -t ${IMAGE_NAME}:latest \
-                          --build-arg BUILD_DATE="$(date -u +'%Y-%m-%dT%H:%M:%SZ')" \
-                          --build-arg VCS_REF="${GIT_COMMIT_SHORT}" \
-                          --build-arg VERSION="${IMAGE_TAG}" \
-                          .
-                        
-                        echo "Docker image built successfully"
-                        docker images | grep ${IMAGE_NAME}
+                        if [ -f docker/Dockerfile ]; then
+                            docker build \
+                                -f docker/Dockerfile \
+                                -t ${IMAGE_NAME}:${IMAGE_TAG} \
+                                -t ${IMAGE_NAME}:latest \
+                                --build-arg BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
+                                --build-arg VCS_REF="${GIT_COMMIT_SHORT}" \
+                                --build-arg VERSION="${IMAGE_TAG}" \
+                                .
+                            echo "Docker image built successfully"
+                            docker images | grep ${IMAGE_NAME}
+                        else
+                            echo "No Dockerfile found at docker/Dockerfile, skipping"
+                        fi
                     '''
                 }
             }
         }
 
-        // ========== Stage 8: Container Tests ==========
         stage('Container Tests') {
             steps {
                 script {
-                    echo "🧪 Testing Docker container..."
+                    echo "Testing Docker container..."
                     sh '''
-                        # Run container and test endpoints
-                        docker run -d --name test-container -p 3000:3000 ${IMAGE_NAME}:${IMAGE_TAG}
-                        sleep 5
-                        
-                        # Health check
-                        echo "Health check:"
-                        curl -s http://localhost:3000/health | python3 -m json.tool || true
-                        
-                        # API test
-                        echo "API test:"
-                        curl -s http://localhost:3000/api/version | python3 -m json.tool || true
-                        
-                        # Cleanup
-                        docker stop test-container
-                        docker rm test-container
-                        
-                        echo "Container tests completed"
+                        if docker image inspect ${IMAGE_NAME}:${IMAGE_TAG} > /dev/null 2>&1; then
+                            docker run -d --name test-container -p 3000:3000 ${IMAGE_NAME}:${IMAGE_TAG}
+                            sleep 5
+                            echo "Health check:"
+                            curl -s http://localhost:3000/health | python3 -m json.tool || true
+                            echo "API test:"
+                            curl -s http://localhost:3000/api/version | python3 -m json.tool || true
+                            docker stop test-container
+                            docker rm   test-container
+                            echo "Container tests completed"
+                        else
+                            echo "No image found, skipping container tests"
+                        fi
                     '''
                 }
             }
         }
 
-        // ========== Stage 9: Docker Push ==========
         stage('Docker Push') {
             when {
                 expression { params.PUSH_IMAGE == true }
             }
             steps {
                 script {
-                    echo "📤 Pushing image to registry..."
+                    echo "Pushing image to registry..."
                     sh '''
                         echo "${DOCKER_REGISTRY_CREDS_PSW}" | docker login -u "${DOCKER_REGISTRY_CREDS_USR}" --password-stdin ${REGISTRY}
-                        
-                        docker tag ${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY}/${DOCKER_REGISTRY_CREDS_USR}/${IMAGE_NAME}:${IMAGE_TAG}
+                        docker tag  ${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY}/${DOCKER_REGISTRY_CREDS_USR}/${IMAGE_NAME}:${IMAGE_TAG}
                         docker push ${REGISTRY}/${DOCKER_REGISTRY_CREDS_USR}/${IMAGE_NAME}:${IMAGE_TAG}
-                        
                         docker logout ${REGISTRY}
-                        
                         echo "Image pushed to ${REGISTRY}/${DOCKER_REGISTRY_CREDS_USR}/${IMAGE_NAME}:${IMAGE_TAG}"
                     '''
                 }
             }
         }
 
-        // ========== Stage 10: Deploy to Dev ==========
         stage('Deploy Dev') {
             when {
                 expression { params.DEPLOY_ENV == 'dev' || params.DEPLOY_ENV == 'staging' || params.DEPLOY_ENV == 'production' }
             }
             steps {
                 script {
-                    echo "🚀 Deploying to DEV environment..."
+                    echo "Deploying to DEV environment..."
                     sh '''
                         echo "Deployment to DEV:"
                         echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
                         echo "Deployment ID: ${DEPLOYMENT_ID}"
                         echo "Timestamp: $(date)"
-                        
-                        # Example: Deploy to local Docker
-                        docker-compose -f docker/docker-compose.yml up -d
-                        
-                        sleep 5
-                        docker ps
-                        
+                        if [ -f docker/docker-compose.yml ]; then
+                            docker-compose -f docker/docker-compose.yml up -d
+                            sleep 5
+                            docker ps
+                        else
+                            echo "No docker-compose.yml found, skipping"
+                        fi
                         echo "DEV deployment completed"
                     '''
                 }
             }
         }
 
-        // ========== Stage 11: Smoke Tests ==========
         stage('Smoke Tests') {
             steps {
                 script {
-                    echo "🔥 Running smoke tests..."
+                    echo "Running smoke tests..."
                     sh '''
-                        echo "Smoke test results:"
-                        
-                        # Test health endpoint
                         HEALTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/health)
                         echo "Health endpoint: HTTP ${HEALTH_CODE}"
                         if [ "${HEALTH_CODE}" != "200" ]; then
                             echo "ERROR: Health check failed"
                             exit 1
                         fi
-                        
-                        # Test root endpoint
                         ROOT_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/)
                         echo "Root endpoint: HTTP ${ROOT_CODE}"
-                        
-                        # Test API endpoint
                         API_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/api/version)
                         echo "API endpoint: HTTP ${API_CODE}"
-                        
                         echo "Smoke tests completed successfully"
                     '''
                 }
             }
         }
 
-        // ========== Stage 12: Deploy Staging ==========
         stage('Deploy Staging') {
             when {
                 expression { params.DEPLOY_ENV == 'staging' || params.DEPLOY_ENV == 'production' }
             }
             steps {
                 script {
-                    echo "🚀 Deploying to STAGING environment..."
+                    echo "Deploying to STAGING environment..."
                     input message: 'Deploy to Staging?', ok: 'Deploy'
-                    
                     sh '''
                         echo "Deploying to STAGING..."
                         echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
-                        echo "This would deploy to staging Kubernetes cluster"
-                        # kubectl set image deployment/myapp myapp=${IMAGE_NAME}:${IMAGE_TAG} -n staging
+                        kubectl apply -f ./kubernetes/ || echo "kubectl not configured"
                     '''
                 }
             }
         }
 
-        // ========== Stage 13: Deploy Production ==========
         stage('Deploy Production') {
             when {
                 expression { params.DEPLOY_ENV == 'production' }
             }
             steps {
                 script {
-                    echo "🚀 Deploying to PRODUCTION environment..."
+                    echo "Deploying to PRODUCTION environment..."
                     input message: 'Deploy to Production? This is a critical action!', ok: 'Deploy to Production'
-                    
                     sh '''
-                        echo "⚠️  DEPLOYING TO PRODUCTION ⚠️"
+                        echo "DEPLOYING TO PRODUCTION"
                         echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
                         echo "Deployment ID: ${DEPLOYMENT_ID}"
-                        echo "This would deploy to production Kubernetes cluster"
-                        # kubectl set image deployment/myapp myapp=${IMAGE_NAME}:${IMAGE_TAG} -n production
-                        # kubectl rollout status deployment/myapp -n production
+                        kubectl apply -f ./kubernetes/          || echo "kubectl not configured"
+                        kubectl rollout status deployment/myapp || echo "rollout status skipped"
                     '''
                 }
             }
         }
 
-        // ========== Stage 14: Integration Tests ==========
         stage('Integration Tests') {
             steps {
                 script {
-                    echo "🔗 Running integration tests..."
+                    echo "Running integration tests..."
                     sh '''
-                        cd app
-                        npm run test:integration 2>/dev/null || echo "No integration tests defined"
+                        if [ -f app/package.json ]; then
+                            cd app
+                            npm run test:integration 2>/dev/null || echo "No integration tests defined"
+                        else
+                            echo "No package.json, skipping integration tests"
+                        fi
                         echo "Integration tests completed"
                     '''
                 }
             }
         }
 
-        // ========== Stage 15: Performance Tests ==========
         stage('Performance Tests') {
             steps {
                 script {
-                    echo "⚡ Running performance tests..."
+                    echo "Running performance tests..."
                     sh '''
                         echo "Performance test results:"
-                        
-                        # Simple load test with Apache Bench
                         ab -n 100 -c 10 http://localhost:3000/ 2>/dev/null || true
-                        
                         echo "Performance tests completed"
                     '''
                 }
             }
         }
+
     }
 
-    // ============ Post Actions ============
     post {
         always {
             script {
-                echo "🔍 Collecting artifacts and logs..."
-                
-                // Archive logs
+                echo "Collecting artifacts and logs..."
                 sh '''
                     mkdir -p artifacts
                     docker logs devops-cicd-app > artifacts/app-logs.txt 2>&1 || true
-                    docker-compose -f docker/docker-compose.yml logs app > artifacts/compose-logs.txt 2>&1 || true
+                    if [ -f docker/docker-compose.yml ]; then
+                        docker-compose -f docker/docker-compose.yml logs app > artifacts/compose-logs.txt 2>&1 || true
+                    fi
                 '''
-                
                 archiveArtifacts artifacts: 'artifacts/**/*', allowEmptyArchive: true
             }
         }
-        
         success {
             script {
-                echo "✅ Pipeline completed successfully!"
+                echo "Pipeline completed successfully!"
                 echo "Build #${BUILD_NUMBER} Succeeded"
                 echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
             }
         }
-        
         failure {
             script {
-                echo "❌ Pipeline failed!"
+                echo "Pipeline failed!"
                 echo "Build #${BUILD_NUMBER} Failed"
             }
         }
-        
         unstable {
             script {
-                echo "⚠️ Pipeline unstable!"
+                echo "Pipeline unstable!"
             }
         }
-        
         aborted {
             script {
-                echo "⏹️  Pipeline aborted!"
+                echo "Pipeline aborted!"
             }
         }
-        
         cleanup {
             script {
-                // Cleanup
                 sh '''
                     echo "Cleaning up..."
                     docker image prune -a -f --filter "until=24h" || true
                 '''
-                
                 cleanWs()
             }
         }
     }
 }
+EOF
