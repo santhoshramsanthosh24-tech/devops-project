@@ -1,4 +1,4 @@
-cd /mnt/e/data\ engennering/Devops_project/
+
 
 cat > jenkins/Jenkinsfile << 'EOF'
 pipeline {
