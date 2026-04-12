@@ -1,0 +1,38 @@
+{
+  "name": "devops-cicd-app",
+  "version": "1.0.0",
+  "description": "Enterprise DevOps CI/CD Application with Docker and Jenkins",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "dev": "node src/index.js",
+    "test": "node --test tests/unit-tests/*.test.js",
+    "test:integration": "node --test tests/integration-tests/*.test.js",
+    "lint": "eslint src/ tests/",
+    "health-check": "curl http://localhost:3000/health"
+  },
+  "keywords": [
+    "devops",
+    "ci-cd",
+    "docker",
+    "jenkins",
+    "kubernetes"
+  ],
+  "author": "DevOps Team",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.18.2",
+    "cors": "^2.8.5",
+    "dotenv": "^16.0.3",
+    "winston": "^3.8.2",
+    "prom-client": "^14.2.0"
+  },
+  "devDependencies": {
+    "eslint": "^8.38.0",
+    "nodemon": "^2.0.20"
+  },
+  "engines": {
+    "node": ">=16.0.0"
+  }
+}

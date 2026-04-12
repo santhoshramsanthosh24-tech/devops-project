@@ -1,0 +1,26 @@
+# Node.js DevOps Application
+.next
+.cache
+dist
+coverage
+node_modules
+*.log
+.env
+.env.local
+.DS_Store
+.vscode
+.idea
+logs/
+
+# Docker
+.dockerignore
+
+# Git
+.git
+.gitignore
+
+# IDE
+*.swp
+*.swo
+.idea/
+.vscode/

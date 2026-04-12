@@ -1,0 +1,35 @@
+# DevOps CI/CD Project - Git Configuration
+
+## Initial Setup
+```bash
+git config --global user.name "Your Name"
+git config --global user.email "your.email@example.com"
+```
+
+## Commit Messages
+Follow the convention:
+```
+<type>(<scope>): <subject>
+
+<body>
+
+<footer>
+```
+
+Examples:
+```
+feat(docker): add multi-stage build
+fix(jenkins): correct pipeline syntax
+docs(readme): update setup instructions
+```
+
+Types:
+- feat: New feature
+- fix: Bug fix
+- docs: Documentation
+- style: Code style
+- refactor: Code refactoring
+- perf: Performance improvement
+- test: Adding tests
+- ci: CI/CD changes
+- chore: Build, dependency updates

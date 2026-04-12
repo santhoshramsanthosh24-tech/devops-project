@@ -1,0 +1,63 @@
+cat > .gitignore << 'EOF'
+# ============ NODE.JS ============
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+package-lock.json
+yarn.lock
+
+# ============ ENVIRONMENT & SECRETS ============
+.env
+.env.local
+.env.*.local
+.env.*
+
+# ============ DOCKER & VOLUMES ============
+docker/logs/
+postgres_data/
+jenkins_home/
+grafana_storage/
+prometheus_data/
+docker_volumes/
+
+# ============ APPLICATION BUILD & LOGS ============
+build/
+dist/
+app/logs/
+logs/
+*.log
+
+# ============ IDE & EDITOR ============
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ============ TESTING ============
+coverage/
+.nyc_output/
+junit.xml
+
+# ============ OS FILES ============
+Thumbs.db
+.DS_Store
+*.tmp
+
+# ============ JENKINS ============
+jenkins/secrets/
+jenkins/logs/
+.jenkins/
+
+# ============ KUBERNETES ============
+kubeconfig
+kubeconfig.yaml
+
+# ============ TEMPORARY FILES ============
+temp/
+tmp/
+*.bak
+*.backup
+EOF
