@@ -1,23 +1,20 @@
-
-
-cat > jenkins/Jenkinsfile << 'EOF'
 pipeline {
     agent any
 
     environment {
-        REGISTRY             = 'docker.io'
-        IMAGE_NAME           = 'devops-cicd-app'
-        IMAGE_TAG            = "${BUILD_NUMBER}"
-        GIT_COMMIT_SHORT     = "${GIT_COMMIT.take(7)}"
-        DEPLOYMENT_ID        = "${BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
+        REGISTRY              = 'docker.io'
+        IMAGE_NAME            = 'devops-cicd-app'
+        IMAGE_TAG             = "${BUILD_NUMBER}"
+        GIT_COMMIT_SHORT      = "${GIT_COMMIT.take(7)}"
+        DEPLOYMENT_ID         = "${BUILD_NUMBER}-${GIT_COMMIT_SHORT}"
         DOCKER_REGISTRY_CREDS = credentials('docker-registry-credentials')
-        SLACK_WEBHOOK        = credentials('slack-webhook-url')
+        SLACK_WEBHOOK         = credentials('slack-webhook-url')
     }
 
     parameters {
         choice(name: 'DEPLOY_ENV', choices: ['dev', 'staging', 'production'], description: 'Deployment Environment')
-        booleanParam(name: 'RUN_TESTS',   defaultValue: true, description: 'Run automated tests')
-        booleanParam(name: 'PUSH_IMAGE',  defaultValue: true, description: 'Push image to registry')
+        booleanParam(name: 'RUN_TESTS',  defaultValue: true, description: 'Run automated tests')
+        booleanParam(name: 'PUSH_IMAGE', defaultValue: true, description: 'Push image to registry')
     }
 
     triggers {
@@ -38,8 +35,7 @@ pipeline {
             steps {
                 script {
                     echo "================================================"
-                    echo "  DevOps CI/CD Pipeline - Build #${BUILD_NUMBER}"
-                    echo "================================================"
+                    echo "DevOps CI/CD Pipeline - Build #${BUILD_NUMBER}"
                     echo "Git Branch: ${GIT_BRANCH}"
                     echo "Git Commit: ${GIT_COMMIT_SHORT}"
                     echo "Environment: ${DEPLOY_ENV}"
@@ -52,13 +48,12 @@ pipeline {
         stage('Checkout') {
             steps {
                 script {
-                    echo "Checking out source code from repository..."
+                    echo "Checking out source code..."
                     checkout scm
                     sh '''
                         echo "Git remote: $(git config --get remote.origin.url)"
                         echo "Git branch: $(git rev-parse --abbrev-ref HEAD)"
                         echo "Git commit: $(git log -1 --oneline)"
-                        echo "Contributors:"
                         git log -1 --pretty=format:"%cn <%ce>"
                     '''
                 }
@@ -93,7 +88,6 @@ pipeline {
                         if [ -f app/package.json ]; then
                             cd app
                             npm test || true
-                            echo "Unit tests completed"
                         else
                             echo "No tests found, skipping"
                         fi
@@ -113,10 +107,10 @@ pipeline {
                                 npm run lint || true
                             fi
                             npm audit --production || true
-                            echo "Code quality check completed"
                         else
                             echo "No package.json, skipping code quality"
                         fi
+                        echo "Code quality check completed"
                     '''
                 }
             }
@@ -127,9 +121,8 @@ pipeline {
                 script {
                     echo "Running security scans..."
                     sh '''
-                        echo "Security scan results:"
-                        grep -r "password" app/src/ 2>/dev/null && echo "Warning: Potential hardcoded passwords detected" || true
-                        grep -r "SECRET"   app/src/ 2>/dev/null && echo "Warning: Potential secrets detected"            || true
+                        grep -r "password" app/src/ 2>/dev/null && echo "Warning: Hardcoded passwords found" || true
+                        grep -r "SECRET"   app/src/ 2>/dev/null && echo "Warning: Secrets found"            || true
                         echo "Security scan completed"
                     '''
                 }
@@ -139,21 +132,18 @@ pipeline {
         stage('Docker Build') {
             steps {
                 script {
-                    echo "Building Docker image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                    echo "Building Docker image..."
                     sh '''
                         if [ -f docker/Dockerfile ]; then
                             docker build \
                                 -f docker/Dockerfile \
                                 -t ${IMAGE_NAME}:${IMAGE_TAG} \
                                 -t ${IMAGE_NAME}:latest \
-                                --build-arg BUILD_DATE="$(date -u +"%Y-%m-%dT%H:%M:%SZ")" \
-                                --build-arg VCS_REF="${GIT_COMMIT_SHORT}" \
-                                --build-arg VERSION="${IMAGE_TAG}" \
                                 .
                             echo "Docker image built successfully"
                             docker images | grep ${IMAGE_NAME}
                         else
-                            echo "No Dockerfile found at docker/Dockerfile, skipping"
+                            echo "No Dockerfile found, skipping"
                         fi
                     '''
                 }
@@ -168,9 +158,7 @@ pipeline {
                         if docker image inspect ${IMAGE_NAME}:${IMAGE_TAG} > /dev/null 2>&1; then
                             docker run -d --name test-container -p 3000:3000 ${IMAGE_NAME}:${IMAGE_TAG}
                             sleep 5
-                            echo "Health check:"
                             curl -s http://localhost:3000/health | python3 -m json.tool || true
-                            echo "API test:"
                             curl -s http://localhost:3000/api/version | python3 -m json.tool || true
                             docker stop test-container
                             docker rm   test-container
@@ -195,7 +183,7 @@ pipeline {
                         docker tag  ${IMAGE_NAME}:${IMAGE_TAG} ${REGISTRY}/${DOCKER_REGISTRY_CREDS_USR}/${IMAGE_NAME}:${IMAGE_TAG}
                         docker push ${REGISTRY}/${DOCKER_REGISTRY_CREDS_USR}/${IMAGE_NAME}:${IMAGE_TAG}
                         docker logout ${REGISTRY}
-                        echo "Image pushed to ${REGISTRY}/${DOCKER_REGISTRY_CREDS_USR}/${IMAGE_NAME}:${IMAGE_TAG}"
+                        echo "Image pushed successfully"
                     '''
                 }
             }
@@ -209,10 +197,7 @@ pipeline {
                 script {
                     echo "Deploying to DEV environment..."
                     sh '''
-                        echo "Deployment to DEV:"
                         echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
-                        echo "Deployment ID: ${DEPLOYMENT_ID}"
-                        echo "Timestamp: $(date)"
                         if [ -f docker/docker-compose.yml ]; then
                             docker-compose -f docker/docker-compose.yml up -d
                             sleep 5
@@ -256,7 +241,6 @@ pipeline {
                     echo "Deploying to STAGING environment..."
                     input message: 'Deploy to Staging?', ok: 'Deploy'
                     sh '''
-                        echo "Deploying to STAGING..."
                         echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
                         kubectl apply -f ./kubernetes/ || echo "kubectl not configured"
                     '''
@@ -270,10 +254,9 @@ pipeline {
             }
             steps {
                 script {
-                    echo "Deploying to PRODUCTION environment..."
+                    echo "Deploying to PRODUCTION..."
                     input message: 'Deploy to Production? This is a critical action!', ok: 'Deploy to Production'
                     sh '''
-                        echo "DEPLOYING TO PRODUCTION"
                         echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
                         echo "Deployment ID: ${DEPLOYMENT_ID}"
                         kubectl apply -f ./kubernetes/          || echo "kubectl not configured"
@@ -292,7 +275,7 @@ pipeline {
                             cd app
                             npm run test:integration 2>/dev/null || echo "No integration tests defined"
                         else
-                            echo "No package.json, skipping integration tests"
+                            echo "No package.json, skipping"
                         fi
                         echo "Integration tests completed"
                     '''
@@ -305,7 +288,6 @@ pipeline {
                 script {
                     echo "Running performance tests..."
                     sh '''
-                        echo "Performance test results:"
                         ab -n 100 -c 10 http://localhost:3000/ 2>/dev/null || true
                         echo "Performance tests completed"
                     '''
@@ -355,7 +337,6 @@ pipeline {
         cleanup {
             script {
                 sh '''
-                    echo "Cleaning up..."
                     docker image prune -a -f --filter "until=24h" || true
                 '''
                 cleanWs()
@@ -363,4 +344,3 @@ pipeline {
         }
     }
 }
-EOF
