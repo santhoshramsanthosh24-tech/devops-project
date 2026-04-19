@@ -158,12 +158,12 @@ pipeline {
                         SRC_DIR="app/src"
                         if [ -d "$SRC_DIR" ]; then
                             echo "Scanning $SRC_DIR for hardcoded secrets..."
-                            grep -rn "password\s*=" "$SRC_DIR" 2>/dev/null \
-                                && echo "WARNING: Possible hardcoded passwords found!" || true
-                            grep -rn "SECRET\s*=" "$SRC_DIR" 2>/dev/null \
-                                && echo "WARNING: Possible secrets found!" || true
-                            grep -rn "API_KEY\s*=" "$SRC_DIR" 2>/dev/null \
-                                && echo "WARNING: Possible API keys found!" || true
+                            grep -rn "password" "$SRC_DIR" 2>/dev/null \
+    && echo "WARNING: Possible hardcoded passwords found!" || true
+grep -rn "SECRET" "$SRC_DIR" 2>/dev/null \
+    && echo "WARNING: Possible secrets found!" || true
+grep -rn "API_KEY" "$SRC_DIR" 2>/dev/null \
+    && echo "WARNING: Possible API keys found!" || true
                         else
                             echo "Source directory $SRC_DIR not found, skipping security scan"
                         fi
