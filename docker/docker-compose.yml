@@ -31,15 +31,14 @@ services:
   jenkins:
     image: jenkins/jenkins:latest
     container_name: devops-jenkins
-    restart: unless-stopped
-    user: root                          # ← ADD THIS
+    user: root
     ports:
       - "8080:8080"
       - "50000:50000"
     volumes:
       - jenkins_home:/var/jenkins_home
-      - /var/run/docker.sock:/var/run/docker.sock   # ← ADD THIS
-      - /usr/bin/docker:/usr/bin/docker              # ← ADD THIS
+      - /var/run/docker.sock:/var/run/docker.sock
+      - /usr/bin/docker:/usr/bin/docker
     networks:
       - devops-network
     restart: unless-stopped
@@ -75,7 +74,7 @@ services:
       - devops-network
     restart: unless-stopped
 
-  # ============ PostgreSQL Database (Optional) ============
+  # ============ PostgreSQL Database ============
   postgres:
     image: postgres:15-alpine
     container_name: devops-postgres
@@ -91,7 +90,7 @@ services:
       - devops-network
     restart: unless-stopped
 
-  # ============ PgAdmin (Database Management) ============
+  # ============ PgAdmin ============
   pgadmin:
     image: dpage/pgadmin4:latest
     container_name: devops-pgadmin
@@ -106,7 +105,7 @@ services:
       - devops-network
     restart: unless-stopped
 
-  # ============ Docker Registry (Private) ============
+  # ============ Docker Registry ============
   registry:
     image: registry:2
     container_name: devops-registry
