@@ -1,14 +1,24 @@
 pipeline {
     agent any
 
+    tools {
+        nodejs 'NodeJS-18'  // Must match name in: Manage Jenkins > Global Tool Configuration > NodeJS
+    }
+
     environment {
         IMAGE_NAME = 'devops-cicd-app'
         IMAGE_TAG  = "${BUILD_NUMBER}"
+        DOCKER_PATH = '/usr/bin/docker'
+        PATH        = "/usr/local/bin:/usr/bin:/bin:${env.PATH}"
     }
 
     parameters {
-        choice(name: 'DEPLOY_ENV', choices: ['dev', 'staging', 'production'], description: 'Deployment Environment')
-        booleanParam(name: 'RUN_TESTS',  defaultValue: true, description: 'Run automated tests')
+        choice(
+            name: 'DEPLOY_ENV',
+            choices: ['dev', 'staging', 'production'],
+            description: 'Deployment Environment'
+        )
+        booleanParam(name: 'RUN_TESTS',  defaultValue: true,  description: 'Run automated tests')
         booleanParam(name: 'PUSH_IMAGE', defaultValue: false, description: 'Push image to registry')
     }
 
@@ -25,285 +35,448 @@ pipeline {
 
     stages {
 
+        // ─────────────────────────────────────────────
         stage('Initialize') {
+        // ─────────────────────────────────────────────
             steps {
                 script {
                     echo "================================================"
                     echo "DevOps CI/CD Pipeline - Build #${BUILD_NUMBER}"
-                    echo "Git Branch: ${GIT_BRANCH}"
-                    echo "Environment: ${params.DEPLOY_ENV}"
+                    echo "Git Branch  : ${GIT_BRANCH}"
+                    echo "Environment : ${params.DEPLOY_ENV}"
+                    echo "Run Tests   : ${params.RUN_TESTS}"
+                    echo "Push Image  : ${params.PUSH_IMAGE}"
                     echo "================================================"
+
+                    // Verify tools availability upfront
+                    sh '''
+                        echo "--- Tool Versions ---"
+                        node  --version || echo "WARNING: node not found"
+                        npm   --version || echo "WARNING: npm not found"
+                        docker --version || echo "WARNING: docker not found"
+                        echo "---------------------"
+                    '''
                 }
             }
         }
 
+        // ─────────────────────────────────────────────
         stage('Checkout') {
+        // ─────────────────────────────────────────────
             steps {
                 script {
                     echo "Checking out source code..."
                     checkout scm
                     sh '''
-                        echo "Git branch: $(git rev-parse --abbrev-ref HEAD)"
-                        echo "Git commit: $(git log -1 --oneline)"
+                        echo "Git branch : $(git rev-parse --abbrev-ref HEAD)"
+                        echo "Git commit : $(git log -1 --oneline)"
                     '''
                 }
             }
         }
 
+        // ─────────────────────────────────────────────
         stage('Build') {
+        // ─────────────────────────────────────────────
             steps {
                 script {
                     echo "Building application..."
-                    sh '''
-                        if [ -f app/package.json ]; then
-                            cd app
-                            npm install --legacy-peer-deps
-                            npm run build 2>/dev/null || echo "No build script defined"
-                        else
-                            echo "No package.json found, skipping build"
-                        fi
-                    '''
+                    catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                        sh '''
+                            if [ -f app/package.json ]; then
+                                echo "package.json found, installing dependencies..."
+                                cd app
+                                npm install --legacy-peer-deps
+                                npm run build 2>/dev/null || echo "No build script defined, skipping"
+                            else
+                                echo "No package.json found, skipping npm build"
+                            fi
+                        '''
+                    }
                 }
             }
         }
 
+        // ─────────────────────────────────────────────
         stage('Unit Tests') {
+        // ─────────────────────────────────────────────
             when {
                 expression { params.RUN_TESTS == true }
             }
             steps {
                 script {
                     echo "Running unit tests..."
-                    sh '''
-                        if [ -f app/package.json ]; then
-                            cd app
-                            npm test || true
-                        else
-                            echo "No tests found, skipping"
-                        fi
-                    '''
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                        sh '''
+                            if [ -f app/package.json ]; then
+                                cd app
+                                npm test -- --passWithNoTests 2>/dev/null || echo "Tests failed or not defined"
+                            else
+                                echo "No package.json found, skipping tests"
+                            fi
+                        '''
+                    }
                 }
             }
         }
 
+        // ─────────────────────────────────────────────
         stage('Code Quality') {
+        // ─────────────────────────────────────────────
             steps {
                 script {
                     echo "Analyzing code quality..."
-                    sh '''
-                        if [ -f app/package.json ]; then
-                            cd app
-                            if [ -f .eslintrc.json ] || [ -f .eslintrc.js ]; then
-                                npm run lint || true
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'UNSTABLE') {
+                        sh '''
+                            if [ -f app/package.json ]; then
+                                cd app
+                                if [ -f .eslintrc.json ] || [ -f .eslintrc.js ] || [ -f .eslintrc.cjs ]; then
+                                    echo "ESLint config found, running lint..."
+                                    npm run lint || echo "Lint issues found (non-blocking)"
+                                else
+                                    echo "No ESLint config found, skipping lint"
+                                fi
+                                echo "Running npm audit..."
+                                npm audit --production || echo "Audit warnings found (non-blocking)"
+                            else
+                                echo "No package.json, skipping code quality checks"
                             fi
-                            npm audit --production || true
-                        else
-                            echo "No package.json, skipping code quality"
-                        fi
-                        echo "Code quality check completed"
-                    '''
+                            echo "Code quality check completed"
+                        '''
+                    }
                 }
             }
         }
 
+        // ─────────────────────────────────────────────
         stage('Security Scan') {
+        // ─────────────────────────────────────────────
             steps {
                 script {
                     echo "Running security scans..."
                     sh '''
-                        grep -r "password" app/src/ 2>/dev/null && echo "Warning: Hardcoded passwords found" || true
-                        grep -r "SECRET"   app/src/ 2>/dev/null && echo "Warning: Secrets found"            || true
+                        SRC_DIR="app/src"
+                        if [ -d "$SRC_DIR" ]; then
+                            echo "Scanning $SRC_DIR for hardcoded secrets..."
+                            grep -rn "password\s*=" "$SRC_DIR" 2>/dev/null \
+                                && echo "WARNING: Possible hardcoded passwords found!" || true
+                            grep -rn "SECRET\s*=" "$SRC_DIR" 2>/dev/null \
+                                && echo "WARNING: Possible secrets found!" || true
+                            grep -rn "API_KEY\s*=" "$SRC_DIR" 2>/dev/null \
+                                && echo "WARNING: Possible API keys found!" || true
+                        else
+                            echo "Source directory $SRC_DIR not found, skipping security scan"
+                        fi
                         echo "Security scan completed"
                     '''
                 }
             }
         }
 
+        // ─────────────────────────────────────────────
         stage('Docker Build') {
+        // ─────────────────────────────────────────────
             steps {
                 script {
                     echo "Building Docker image..."
-                    sh '''
-                        if [ -f docker/Dockerfile ]; then
-                            docker build \
-                                -f docker/Dockerfile \
-                                -t ${IMAGE_NAME}:${IMAGE_TAG} \
-                                -t ${IMAGE_NAME}:latest \
-                                .
-                            echo "Docker image built successfully"
-                            docker images | grep ${IMAGE_NAME}
-                        else
-                            echo "No Dockerfile found, skipping"
-                        fi
-                    '''
+                    catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                        sh '''
+                            # Check Docker is available
+                            if ! command -v docker &> /dev/null; then
+                                echo "ERROR: Docker not found. Ensure Docker socket is mounted into Jenkins."
+                                exit 1
+                            fi
+
+                            if [ -f docker/Dockerfile ]; then
+                                echo "Dockerfile found, building image..."
+                                docker build \
+                                    -f docker/Dockerfile \
+                                    -t ${IMAGE_NAME}:${IMAGE_TAG} \
+                                    -t ${IMAGE_NAME}:latest \
+                                    --no-cache \
+                                    .
+                                echo "Docker image built successfully"
+                                docker images | grep "${IMAGE_NAME}"
+                            else
+                                echo "No Dockerfile found at docker/Dockerfile, skipping Docker build"
+                            fi
+                        '''
+                    }
                 }
             }
         }
 
+        // ─────────────────────────────────────────────
         stage('Container Tests') {
+        // ─────────────────────────────────────────────
             steps {
                 script {
                     echo "Testing Docker container..."
-                    sh '''
-                        if docker image inspect ${IMAGE_NAME}:${IMAGE_TAG} > /dev/null 2>&1; then
-                            docker run -d --name test-container -p 3000:3000 ${IMAGE_NAME}:${IMAGE_TAG}
-                            sleep 5
-                            curl -s http://localhost:3000/health | python3 -m json.tool || true
-                            curl -s http://localhost:3000/api/version | python3 -m json.tool || true
-                            docker stop test-container
-                            docker rm   test-container
-                            echo "Container tests completed"
-                        else
-                            echo "No image found, skipping container tests"
-                        fi
-                    '''
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                        sh '''
+                            if docker image inspect ${IMAGE_NAME}:${IMAGE_TAG} > /dev/null 2>&1; then
+                                echo "Starting test container..."
+                                docker run -d \
+                                    --name test-container-${BUILD_NUMBER} \
+                                    -p 3001:3000 \
+                                    ${IMAGE_NAME}:${IMAGE_TAG}
+
+                                echo "Waiting for container to be ready..."
+                                sleep 8
+
+                                echo "Running health checks..."
+                                curl -sf http://localhost:3001/health \
+                                    | python3 -m json.tool || echo "Health endpoint not responding"
+                                curl -sf http://localhost:3001/api/version \
+                                    | python3 -m json.tool || echo "Version endpoint not responding"
+
+                                echo "Stopping test container..."
+                                docker stop test-container-${BUILD_NUMBER}  || true
+                                docker rm   test-container-${BUILD_NUMBER}  || true
+                                echo "Container tests completed"
+                            else
+                                echo "No image ${IMAGE_NAME}:${IMAGE_TAG} found, skipping container tests"
+                            fi
+                        '''
+                    }
                 }
             }
         }
 
+        // ─────────────────────────────────────────────
         stage('Docker Push') {
+        // ─────────────────────────────────────────────
             when {
                 expression { params.PUSH_IMAGE == true }
             }
             steps {
                 script {
-                    echo "Docker push skipped - configure registry credentials to enable"
+                    echo "Pushing Docker image to registry..."
+                    // Uncomment and configure when registry credentials are ready:
+                    // withCredentials([usernamePassword(
+                    //     credentialsId: 'docker-registry-creds',
+                    //     usernameVariable: 'REGISTRY_USER',
+                    //     passwordVariable: 'REGISTRY_PASS'
+                    // )]) {
+                    //     sh '''
+                    //         echo "$REGISTRY_PASS" | docker login -u "$REGISTRY_USER" --password-stdin
+                    //         docker push ${IMAGE_NAME}:${IMAGE_TAG}
+                    //         docker push ${IMAGE_NAME}:latest
+                    //     '''
+                    // }
+                    echo "Docker Push skipped — configure registry credentials in Jenkins to enable"
                 }
             }
         }
 
+        // ─────────────────────────────────────────────
         stage('Deploy Dev') {
+        // ─────────────────────────────────────────────
             when {
-                expression { params.DEPLOY_ENV == 'dev' || params.DEPLOY_ENV == 'staging' || params.DEPLOY_ENV == 'production' }
+                anyOf {
+                    expression { params.DEPLOY_ENV == 'dev' }
+                    expression { params.DEPLOY_ENV == 'staging' }
+                    expression { params.DEPLOY_ENV == 'production' }
+                }
             }
             steps {
                 script {
                     echo "Deploying to DEV environment..."
-                    sh '''
-                        echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
-                        if [ -f docker/docker-compose.yml ]; then
-                            docker-compose -f docker/docker-compose.yml up -d
-                            sleep 5
-                            docker ps
-                        else
-                            echo "No docker-compose.yml found, skipping"
-                        fi
-                        echo "DEV deployment completed"
-                    '''
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                        sh '''
+                            echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                            if [ -f docker/docker-compose.yml ]; then
+                                if command -v docker-compose &> /dev/null; then
+                                    docker-compose -f docker/docker-compose.yml up -d
+                                elif docker compose version &> /dev/null 2>&1; then
+                                    docker compose -f docker/docker-compose.yml up -d
+                                else
+                                    echo "WARNING: docker-compose not available, skipping"
+                                fi
+                                sleep 5
+                                docker ps
+                            else
+                                echo "No docker-compose.yml found at docker/docker-compose.yml, skipping"
+                            fi
+                            echo "DEV deployment completed"
+                        '''
+                    }
                 }
             }
         }
 
+        // ─────────────────────────────────────────────
         stage('Smoke Tests') {
+        // ─────────────────────────────────────────────
             steps {
                 script {
                     echo "Running smoke tests..."
                     sh '''
-                        HEALTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:3000/health 2>/dev/null || echo "000")
+                        HEALTH_CODE=$(curl -s -o /dev/null -w "%{http_code}" \
+                            --max-time 10 http://localhost:3000/health 2>/dev/null || echo "000")
                         echo "Health endpoint: HTTP ${HEALTH_CODE}"
+
+                        if [ "$HEALTH_CODE" = "200" ]; then
+                            echo "Smoke test PASSED"
+                        else
+                            echo "Smoke test WARNING: endpoint returned ${HEALTH_CODE} (may not be deployed)"
+                        fi
                         echo "Smoke tests completed"
                     '''
                 }
             }
         }
 
+        // ─────────────────────────────────────────────
         stage('Deploy Staging') {
+        // ─────────────────────────────────────────────
             when {
-                expression { params.DEPLOY_ENV == 'staging' || params.DEPLOY_ENV == 'production' }
+                anyOf {
+                    expression { params.DEPLOY_ENV == 'staging' }
+                    expression { params.DEPLOY_ENV == 'production' }
+                }
             }
             steps {
                 script {
                     echo "Deploying to STAGING environment..."
-                    input message: 'Deploy to Staging?', ok: 'Deploy'
-                    sh '''
-                        echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
-                        kubectl apply -f ./kubernetes/ || echo "kubectl not configured"
-                    '''
+                    timeout(time: 10, unit: 'MINUTES') {
+                        input message: 'Approve deployment to Staging?', ok: 'Deploy'
+                    }
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                        sh '''
+                            echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                            if command -v kubectl &> /dev/null; then
+                                kubectl apply -f ./kubernetes/
+                                echo "Staging deployment submitted"
+                            else
+                                echo "kubectl not configured or not found, skipping"
+                            fi
+                        '''
+                    }
                 }
             }
         }
 
+        // ─────────────────────────────────────────────
         stage('Deploy Production') {
+        // ─────────────────────────────────────────────
             when {
                 expression { params.DEPLOY_ENV == 'production' }
             }
             steps {
                 script {
                     echo "Deploying to PRODUCTION..."
-                    input message: 'Deploy to Production? This is a critical action!', ok: 'Deploy to Production'
-                    sh '''
-                        echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
-                        kubectl apply -f ./kubernetes/          || echo "kubectl not configured"
-                        kubectl rollout status deployment/myapp || echo "rollout status skipped"
-                    '''
+                    timeout(time: 15, unit: 'MINUTES') {
+                        input message: 'CRITICAL: Approve deployment to Production?', ok: 'Deploy to Production'
+                    }
+                    catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                        sh '''
+                            echo "Image: ${IMAGE_NAME}:${IMAGE_TAG}"
+                            if command -v kubectl &> /dev/null; then
+                                kubectl apply -f ./kubernetes/
+                                kubectl rollout status deployment/myapp --timeout=5m \
+                                    || echo "WARNING: Rollout status check failed"
+                            else
+                                echo "kubectl not configured or not found, skipping"
+                            fi
+                        '''
+                    }
                 }
             }
         }
 
+        // ─────────────────────────────────────────────
         stage('Integration Tests') {
+        // ─────────────────────────────────────────────
+            when {
+                expression { params.RUN_TESTS == true }
+            }
             steps {
                 script {
                     echo "Running integration tests..."
-                    sh '''
-                        if [ -f app/package.json ]; then
-                            cd app
-                            npm run test:integration 2>/dev/null || echo "No integration tests defined"
-                        else
-                            echo "No package.json, skipping"
-                        fi
-                        echo "Integration tests completed"
-                    '''
+                    catchError(buildResult: 'UNSTABLE', stageResult: 'FAILURE') {
+                        sh '''
+                            if [ -f app/package.json ]; then
+                                cd app
+                                npm run test:integration 2>/dev/null \
+                                    || echo "No integration tests defined, skipping"
+                            else
+                                echo "No package.json, skipping integration tests"
+                            fi
+                            echo "Integration tests completed"
+                        '''
+                    }
                 }
             }
         }
 
+        // ─────────────────────────────────────────────
         stage('Performance Tests') {
+        // ─────────────────────────────────────────────
             steps {
                 script {
                     echo "Running performance tests..."
                     sh '''
-                        ab -n 100 -c 10 http://localhost:3000/ 2>/dev/null || echo "Apache Bench not available, skipping"
+                        if command -v ab &> /dev/null; then
+                            ab -n 100 -c 10 http://localhost:3000/ || echo "ab benchmark failed (non-blocking)"
+                        else
+                            echo "Apache Bench (ab) not available, skipping performance tests"
+                            echo "To enable: apt-get install apache2-utils"
+                        fi
                         echo "Performance tests completed"
                     '''
                 }
             }
         }
 
-    }
+    } // end stages
 
+    // ─────────────────────────────────────────────
     post {
+    // ─────────────────────────────────────────────
         always {
-            node(null) {
-                script {
-                    echo "Collecting artifacts and logs..."
-                    sh '''
-                        mkdir -p artifacts
-                        docker logs devops-cicd-app > artifacts/app-logs.txt 2>&1 || true
-                        if [ -f docker/docker-compose.yml ]; then
-                            docker-compose -f docker/docker-compose.yml logs app > artifacts/compose-logs.txt 2>&1 || true
+            script {
+                echo "Collecting artifacts and logs..."
+                sh '''
+                    mkdir -p artifacts
+
+                    # Collect Docker container logs if running
+                    docker logs devops-cicd-app > artifacts/app-logs.txt 2>&1 || true
+
+                    # Collect compose logs if available
+                    if [ -f docker/docker-compose.yml ]; then
+                        if command -v docker-compose &> /dev/null; then
+                            docker-compose -f docker/docker-compose.yml logs \
+                                > artifacts/compose-logs.txt 2>&1 || true
+                        elif docker compose version &> /dev/null 2>&1; then
+                            docker compose -f docker/docker-compose.yml logs \
+                                > artifacts/compose-logs.txt 2>&1 || true
                         fi
-                    '''
-                    archiveArtifacts artifacts: 'artifacts/**/*', allowEmptyArchive: true
-                }
+                    fi
+                '''
+                archiveArtifacts artifacts: 'artifacts/**/*', allowEmptyArchive: true
             }
         }
+
         success {
-            echo "Pipeline completed successfully! Build #${BUILD_NUMBER}"
+            echo "✅ Pipeline completed successfully! Build #${BUILD_NUMBER}"
         }
+
         failure {
-            echo "Pipeline failed! Build #${BUILD_NUMBER}"
+            echo "❌ Pipeline failed! Build #${BUILD_NUMBER}"
         }
+
         unstable {
-            echo "Pipeline unstable!"
+            echo "⚠️ Pipeline unstable! Build #${BUILD_NUMBER} — check test results"
         }
+
         aborted {
-            echo "Pipeline aborted!"
+            echo "🚫 Pipeline aborted! Build #${BUILD_NUMBER}"
         }
+
         cleanup {
-            node(null) {
-                sh 'docker image prune -a -f --filter "until=24h" || true'
-                cleanWs()
-            }
+            sh 'docker image prune -f --filter "until=24h" || true'
+            cleanWs()
         }
     }
 }
