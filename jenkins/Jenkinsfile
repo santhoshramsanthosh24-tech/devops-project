@@ -9,7 +9,7 @@ pipeline {
         IMAGE_NAME = 'devops-cicd-app'
         IMAGE_TAG  = "${BUILD_NUMBER}"
         DOCKER_PATH = '/usr/bin/docker'
-        PATH        = "/usr/local/bin:/usr/bin:/bin:${env.PATH}"
+        PATH        = "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin ${env.PATH}"
     }
 
     parameters {
