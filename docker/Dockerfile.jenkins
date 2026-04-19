@@ -1,0 +1,4 @@
+FROM jenkins/jenkins:latest
+USER root
+RUN ln -sf /usr/bin/docker /usr/local/bin/docker
+USER jenkins

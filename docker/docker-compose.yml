@@ -29,7 +29,9 @@ services:
 
   # ============ Jenkins Service ============
   jenkins:
-    image: jenkins/jenkins:latest
+    build:
+      context: .
+      dockerfile: Dockerfile.jenkins      # ← change image to build
     container_name: devops-jenkins
     user: root
     ports:
