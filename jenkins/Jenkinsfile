@@ -172,37 +172,23 @@ grep -rn "API_KEY" "$SRC_DIR" 2>/dev/null \
         }
 
         // ─────────────────────────────────────────────
-        stage('Docker Build') {
-        // ─────────────────────────────────────────────
-            steps {
-                script {
-                    echo "Building Docker image..."
-                    catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
-                        sh '''
-                            # Check Docker is available
-                            if ! command -v docker &> /dev/null; then
-                                echo "ERROR: Docker not found. Ensure Docker socket is mounted into Jenkins."
-                                exit 1
-                            fi
-
-                            if [ -f docker/Dockerfile ]; then
-                                echo "Dockerfile found, building image..."
-                                docker build \
-                                    -f docker/Dockerfile \
-                                    -t ${IMAGE_NAME}:${IMAGE_TAG} \
-                                    -t ${IMAGE_NAME}:latest \
-                                    --no-cache \
-                                    .
-                                echo "Docker image built successfully"
-                                docker images | grep "${IMAGE_NAME}"
-                            else
-                                echo "No Dockerfile found at docker/Dockerfile, skipping Docker build"
-                            fi
-                        '''
-                    }
-                }
+       stage('Docker Build') {
+    steps {
+        script {
+            catchError(buildResult: 'FAILURE', stageResult: 'FAILURE') {
+                sh '''
+                    if command -v docker > /dev/null 2>&1; then
+                        echo "Docker found: $(docker --version)"
+                        docker build -t devops-cicd-app:${BUILD_NUMBER} .
+                    else
+                        echo "ERROR: Docker not found. Ensure Docker socket is mounted into Jenkins."
+                        exit 1
+                    fi
+                '''
             }
         }
+    }
+}
 
         // ─────────────────────────────────────────────
         stage('Container Tests') {
