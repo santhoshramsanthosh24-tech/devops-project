@@ -38,6 +38,7 @@ services:
       - "50000:50000"
     environment:
       JAVA_OPTS: "-Xmx512m -Xms512m"
+      DOCKER_HOST: unix:///var/run/docker.sock
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - jenkins_home:/var/jenkins_home
@@ -45,6 +46,7 @@ services:
       - devops-network
     restart: unless-stopped
     privileged: true
+    user: root
 
   # ============ Prometheus Monitoring ============
   prometheus:
