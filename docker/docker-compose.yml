@@ -38,9 +38,9 @@ services:
       - "50000:50000"
     environment:
       JAVA_OPTS: "-Xmx512m -Xms512m -Djenkins.install.runSetupWizard=false"
+      JENKINS_ADMIN_USER: admin
+      JENKINS_ADMIN_PASSWORD: Admin@123456
       DOCKER_HOST: unix:///var/run/docker.sock
-      JENKINS_ADMIN_ID: admin
-      JENKINS_ADMIN_PASSWORD: admin123
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - jenkins_home:/var/jenkins_home
