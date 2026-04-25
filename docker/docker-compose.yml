@@ -29,21 +29,10 @@ services:
 
   # ============ Jenkins Service ============
   jenkins:
-    build:
-      context: .
-      dockerfile: Dockerfile.jenkins      # ← change image to build
-    container_name: devops-jenkins
-    user: root
-    ports:
-      - "8080:8080"
-      - "50000:50000"
+    image: jenkins/jenkins:lts
     volumes:
-      - jenkins_home:/var/jenkins_home
       - /var/run/docker.sock:/var/run/docker.sock
       - /usr/bin/docker:/usr/bin/docker
-    networks:
-      - devops-network
-    restart: unless-stopped
 
   # ============ Prometheus Monitoring ============
   prometheus:
