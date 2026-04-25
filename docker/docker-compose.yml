@@ -27,29 +27,6 @@ services:
       retries: 3
       start_period: 5s
 
-  # ============ Jenkins Service ============
-  jenkins:
-    build:
-      context: .
-      dockerfile: Dockerfile.jenkins
-    container_name: devops-jenkins
-    ports:
-      - "8080:8080"
-      - "50000:50000"
-    environment:
-      JAVA_OPTS: "-Xmx512m -Xms512m -Djenkins.install.runSetupWizard=false"
-      JENKINS_ADMIN_USER: admin
-      JENKINS_ADMIN_PASSWORD: Admin@123456
-      DOCKER_HOST: unix:///var/run/docker.sock
-    volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-      - jenkins_home:/var/jenkins_home
-    networks:
-      - devops-network
-    restart: unless-stopped
-    privileged: true
-    user: root
-
   # ============ Prometheus Monitoring ============
   prometheus:
     image: prom/prometheus:latest
@@ -129,7 +106,6 @@ networks:
     driver: bridge
 
 volumes:
-  jenkins_home:
   prometheus_data:
   grafana_storage:
   postgres_data:
