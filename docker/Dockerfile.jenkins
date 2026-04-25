@@ -11,4 +11,10 @@ RUN apt-get update && \
 # Add jenkins user to docker group
 RUN usermod -aG docker jenkins
 
+# Create init.groovy.d directory for scripts
+RUN mkdir -p /usr/share/jenkins/ref/init.groovy.d/
+
+# Copy Groovy script to disable security and setup wizard
+COPY --chown=jenkins:jenkins init-jenkins.groovy /usr/share/jenkins/ref/init.groovy.d/
+
 USER jenkins
