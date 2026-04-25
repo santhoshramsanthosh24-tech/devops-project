@@ -179,7 +179,7 @@ grep -rn "API_KEY" "$SRC_DIR" 2>/dev/null \
                 sh '''
                     if command -v docker > /dev/null 2>&1; then
                         echo "Docker found: $(docker --version)"
-                        docker build -t devops-cicd-app:${BUILD_NUMBER} .
+                        docker build -t devops-cicd-app:${BUILD_NUMBER} -f docker/Dockerfile .
                     else
                         echo "ERROR: Docker not found. Ensure Docker socket is mounted into Jenkins."
                         exit 1

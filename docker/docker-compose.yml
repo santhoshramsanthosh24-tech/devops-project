@@ -29,10 +29,22 @@ services:
 
   # ============ Jenkins Service ============
   jenkins:
-    image: jenkins/jenkins:lts
+    build:
+      context: .
+      dockerfile: Dockerfile.jenkins
+    container_name: devops-jenkins
+    ports:
+      - "8080:8080"
+      - "50000:50000"
+    environment:
+      JAVA_OPTS: "-Xmx512m -Xms512m"
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - /usr/bin/docker:/usr/bin/docker
+      - jenkins_home:/var/jenkins_home
+    networks:
+      - devops-network
+    restart: unless-stopped
+    privileged: true
 
   # ============ Prometheus Monitoring ============
   prometheus:
